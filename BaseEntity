@@ -1,0 +1,8 @@
+public abstract class BaseEntity
+    {
+
+        public abstract bool IsNew { get; }
+
+        public virtual long ID { get; set; }
+
+    }
