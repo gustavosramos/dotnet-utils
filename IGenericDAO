@@ -1,0 +1,29 @@
+public interface IGenericDAO<Entity> where Entity : class
+    {
+        Entity MountObject(SqlDataReader result);
+
+        Entity Save(Entity obj);
+
+        Entity Insert(Entity obj);
+
+        Entity Update(Entity obj);
+
+        /// <summary>
+        /// Execute the inserts, updates and removes
+        /// </summary>
+        /// <returns>An integer representing the number of rows affected</returns>
+        int ExecuteNonQuerySql(string sql);
+        
+        List<Entity> Save(List<Entity> obj);
+
+        Entity Get(long id);
+
+        Entity Remove(Entity obj);
+
+        List<Entity> Remove(List<Entity> obj);
+
+        Entity ExecuteSqlSingleResult(string sql);
+
+        List<Entity> ExecuteSqlList(string sql);
+
+    }
