@@ -1,0 +1,227 @@
+public abstract class GenericDAO<Entity> : IGenericDAO<Entity> where Entity : BaseEntity
+    {
+
+
+        public SqlConnection connection
+        {
+            get
+            {
+                return GtCabinetConnection.GetConnection();
+            }
+        }
+
+        /// <summary>
+        /// string que representa o nome da tabela do banco de dados
+        /// </summary>
+        public abstract string TableName { get; }
+
+        /// <summary>
+        /// Dicionário das colunas do banco de dados e suas respectivas propriedades da Entidade
+        /// </summary>
+        public abstract Dictionary<string, string> TableColumns { get; }
+
+        public abstract Entity MountObject(SqlDataReader result);
+
+        public GenericDAO()
+        {
+
+        }
+
+        public Entity Save(Entity obj)
+        {
+            if (obj.ID == 0)
+            {
+                obj = Insert(obj);
+            }
+            else
+            {
+                obj = Update(obj);
+            }
+            return obj;
+        }
+
+        public List<Entity> Save(List<Entity> obj)
+        {
+            for (int i = 0; i < obj.Count; i++)
+            {
+                obj[i] = Save(obj[i]);
+            }
+            return obj;
+        }
+
+
+        internal abstract Entity Insert(Entity obj);
+        internal Entity InsertG(Entity obj)
+        {
+            System.Text.StringBuilder sql = new System.Text.StringBuilder();
+            sql.Append("INSERT INTO ").Append(TableName);
+            sql.Append(" (");
+            foreach (KeyValuePair<string, string> p in TableColumns)
+            {
+                sql.Append(p.Value).Append(",");
+            }
+            sql.Remove(sql.Length - 1, 1);//retira último char (para vírgulas)           
+            sql.Append(") VALUES (");
+            foreach (KeyValuePair<string, string> p in TableColumns)
+            {
+                if(this.needsComma(typeof(Entity).GetProperty(p.Value).GetType()))
+                {
+                    sql.Append("'").Append(typeof(Entity).GetProperty(p.Value).GetValue(obj)).Append("'").Append(",");
+                }
+                else
+                {
+                    sql.Append(p.Value).Append(",");
+                }                
+            }
+            sql.Remove(sql.Length - 1, 1);//retira último char (para vírgulas)            
+            sql.Append(")");
+            //--
+            ExecuteNonQuerySql(sql.ToString());
+            //--
+            obj.ID = GetCurrentIdValue();//AQUI RECUPERA O ID DESTINADO AO NOVO OBJETO
+            return obj;
+        }
+
+
+        internal abstract Entity Update(Entity obj);
+        internal Entity UpdateG(Entity obj)
+        {
+            System.Text.StringBuilder sql = new System.Text.StringBuilder();
+            sql.Append("UPDATE ").Append(TableName).Append(" SET ");
+            foreach (KeyValuePair<string, string> p in TableColumns)
+            {
+                sql.Append(p.Value).Append(" = ");
+                if(this.needsComma(typeof(Entity).GetProperty(p.Value).GetType()))
+                {
+                    sql.Append("'").Append(typeof(Entity).GetProperty(p.Value).GetValue(obj)).Append("'").Append(",");
+                }
+                else
+                {
+                    sql.Append(typeof(Entity).GetProperty(p.Value).GetValue(obj)).Append(",");
+                }                
+            }
+            sql.Remove(sql.Length - 1, 1);//retira último char (para vírgulas) 
+            
+            sql.Append(" WHERE id_").Append(PrimaryKeySufixByTableName).Append(" = ").Append(obj.ID);
+            //--
+            ExecuteNonQuerySql(sql.ToString());
+
+            return obj;
+        }
+
+        public Entity Get(long id)
+        {
+            return ExecuteSqlSingleResult("SELECT * FROM " + TableName + " WHERE id_" + PrimaryKeySufixByTableName + " = " + id.ToString());
+        }
+
+        public Entity Remove(Entity obj)
+        {
+            ExecuteNonQuerySql("DELETE FROM " + TableName + " WHERE id_" + PrimaryKeySufixByTableName);
+            return obj;
+        }
+
+        /// <summary>
+        /// Gets the sufix of the primary key from the Table based on the TableName
+        /// </summary>
+        internal string PrimaryKeySufixByTableName
+        {
+            get
+            {
+                if (TableName.Substring(TableName.Length - 1, 1).ToLower().Equals("s"))
+                {
+                    return TableName.Substring(0, TableName.Length - 1);
+                }
+                return TableName;
+            }
+        }
+
+        public List<Entity> Remove(List<Entity> obj)
+        {
+            for (int i = 0; i < obj.Count; i++)
+            {
+                Remove(obj[i]);
+            }
+            return obj;
+        }
+
+        internal Entity ExecuteSqlSingleResult(string sql)
+        {
+            using (var conn = connection)
+            {
+                Entity e = null;
+                connection.Open();
+                using (SqlCommand command = new SqlCommand(sql, conn))
+                using (SqlDataReader reader = command.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        e = MountObject(reader);
+                    }
+                }
+                return e;
+            }
+        }
+
+        internal List<Entity> ExecuteSqlList(string sql)
+        {
+            using (var conn = connection)
+            {
+                List<Entity> e = null;
+                connection.Open();
+                using (SqlCommand command = new SqlCommand(sql, conn))
+                using (SqlDataReader reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        if(e == null) e = new List<Entity>();
+                        e.Add(MountObject(reader));
+                    }
+                }
+                return e;
+            }
+        }
+
+        /// <summary>
+        /// Execute the inserts, updates and removes
+        /// </summary>
+        /// <returns>An integer representing the number of rows affected</returns>
+        internal int ExecuteNonQuerySql(string sql)
+        {
+            using (var conn = connection)
+            {
+                connection.Open();
+                using (SqlCommand command = new SqlCommand(sql, conn))
+                {
+                    return command.ExecuteNonQuery();
+                }
+            }
+        }
+
+        internal long GetCurrentIdValue()
+        {
+            //SELECT IDENT_CURRENT('table_name')
+            using (var conn = connection)
+            {
+                List<Entity> e = new List<Entity>();
+                connection.Open();
+                using (SqlCommand command = new SqlCommand("SELECT IDENT_CURRENT('"+TableName+"')", conn))
+                using (SqlDataReader reader = command.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        return reader.GetInt64(0);
+                    }
+                }
+                return 0;
+            }
+        }
+
+        private bool needsComma(Type t)
+        {
+            if(t == typeof(long) ||t == typeof(int) ||t == typeof(short) ||t == typeof(bool) ){
+                return false;
+            }
+            return true;
+        }
+
+    }
